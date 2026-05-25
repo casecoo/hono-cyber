@@ -30,6 +30,74 @@ export class AIService {
         this.c = c;
     }
 
+private calculateShannonEntropy(text: string): number {
+    const freq: Record<string, number> = {};
+    for (const char of text) {
+        freq[char] = (freq[char] || 0) + 1;
+    }
+    const len = text.length;
+    let entropy = 0;
+    for (const char in freq) {
+        const p = freq[char] / len;
+        entropy -= p * Math.log2(p);
+    }
+    return entropy * len;
+}
+
+private findSequentialPatterns(text: string): number {
+    let patterns = 0;
+    const lower = text.toLowerCase();
+    for (let i = 0; i < lower.length - 2; i++) {
+        const c1 = lower.charCodeAt(i);
+        const c2 = lower.charCodeAt(i + 1);
+        const c3 = lower.charCodeAt(i + 2);
+        
+        if (c1 === c2 && c2 === c3) patterns++; 
+        else if (c2 === c1 + 1 && c3 === c2 + 1) patterns++; 
+        else if (c2 === c1 - 1 && c3 === c2 - 1) patterns++; 
+    }
+    return patterns;
+}
+
+private findKeyboardPatterns(text: string): number {
+    const layouts = [
+        "qwertyuiop", "asdfghjkl", "zxcvbnm",
+        "1234567890", "qazwsxedcrfvtgbyhnujmikolp"
+    ];
+    let patterns = 0;
+    const lower = text.toLowerCase();
+    for (const layout of layouts) {
+        for (let i = 0; i < lower.length - 2; i++) {
+            const chunk = lower.substring(i, i + 3);
+            if (layout.includes(chunk) || layout.split('').reverse().join('').includes(chunk)) {
+                patterns++;
+            }
+        }
+    }
+    return patterns;
+}
+
+private calculateLocalScore(stats: any): number {
+    let score = (stats.shannonEntropy / 100) * 100;
+    if (score > 100) score = 100;
+    
+    score -= stats.sequentialPatterns * 10;
+    score -= stats.keyboardPatterns * 15;
+    if (stats.includesNameOrSurname) score -= 20;
+    if (stats.hasBirthYear) score -= 15;
+    
+    let types = 0;
+    if (stats.upper > 0) types++;
+    if (stats.lower > 0) types++;
+    if (stats.digits > 0) types++;
+    if (stats.special > 0) types++;
+    
+    if (types === 1) score -= 30; 
+    else if (types === 2) score -= 15;
+    
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 private cleanAndSplit(text: string): string[] {
     // Kaçış karakterlerini temizle, boşlukları normalize et ve cümleleri ayır
     return text
@@ -65,14 +133,18 @@ private processText(text: string, personalInfo: any): TextStats {
         }
     }
     
-    let nameOrsurname = (text.toLowerCase().includes(personalInfo.name) || text.toLowerCase().includes(personalInfo.surname))
+    let nameOrsurname = (text.toLowerCase().includes(personalInfo.name?.toLowerCase()) || text.toLowerCase().includes(personalInfo.surname?.toLowerCase()))
     let birthDateInfo = personalInfo.birthDate ? personalInfo.birthDate.split('-') : ''
     let hasBirthYear = false;
     if (birthDateInfo) {
-        hasBirthYear = text.includes(birthDateInfo[2]) // YYYY
+        hasBirthYear = text.includes(birthDateInfo[0]) || text.includes(birthDateInfo[2]) // YYYY might be start or end
     }
+    
+    let shannonEntropy = this.calculateShannonEntropy(text);
+    let sequentialPatterns = this.findSequentialPatterns(text);
+    let keyboardPatterns = this.findKeyboardPatterns(text);
 
-    return {
+    let baseStats = {
         upper: uppercase,
         lower: lowercase,
         digits: digits,
@@ -80,42 +152,53 @@ private processText(text: string, personalInfo: any): TextStats {
         whitespace: whitespace,
         totalLength: text.length,
         includesNameOrSurname: nameOrsurname,
-        hasBirthYear: hasBirthYear
-    }
+        hasBirthYear: hasBirthYear,
+        shannonEntropy: shannonEntropy,
+        sequentialPatterns: sequentialPatterns,
+        keyboardPatterns: keyboardPatterns,
+        localEntropyScore: 0 // Will be computed next
+    };
+    
+    baseStats.localEntropyScore = this.calculateLocalScore(baseStats);
+
+    return baseStats;
 }
 
 
 private getSystemPrompt(): string {
     return [
-        'You are a password security expert.',
-        'You will receive character statistics describing a user password.',
-        'Please evaluate the password personally based on these stats.',
-        'First, give a short strength assessment: Strong / Medium / Weak.',
-        'Then, provide up to 3 concise and practical security suggestions.',
-        'Warn the user if their personal information is included in the password. If so, emphasize changing it.',
-        'Use a polite, user-facing tone.',
-        'Respond in Turkish.',
-        'Keep the entire reply short (3-6 sentences) and actionable.',
-        'This report will be sent as a list of strings so make sure your sentences are clear and complete.'
+        'You are a password security expert analyzing an Anonymous Technical Meta-data Profile.',
+        'You will receive character statistics, Shannon entropy, and pattern analyses of a user password. THE RAW PASSWORD IS NOT PROVIDED to preserve "Privacy-by-Design".',
+        'Please interpret this technical profile from these perspectives: cultural, linguistic, semantic coherence, dictionary attacks, and human behavior predictability.',
+        'Evaluate whether the pattern indicates compliance with formal rules but is semantically weak (e.g. follows "WordNumber!" pattern).',
+        'Provide your response exactly in this JSON format:',
+        '{',
+        '  "semanticScore": <an integer between 0 and 100 evaluating the semantic strength based on the provided stats and patterns>,',
+        '  "suggestions": ["suggestion 1", "suggestion 2", ...] (Provide up to 3 concise, actionable, and polite suggestions in Turkish)',
+        '}',
+        'Do NOT wrap the JSON in Markdown block. Output raw JSON only. Warn the user if their personal information is included.'
     ].join('\n');
 }
 
 private buildUserMessage(stats: TextStats): string {
-    // Include system prompt at the beginning of user message (v1beta compatibility)
     const systemPrompt = this.getSystemPrompt();
     const statistics = [
-        'Statistics:',
-        `- Uppercase letters: ${stats.upper}`,
-        `- Lowercase letters: ${stats.lower}`,
-        `- Digits: ${stats.digits}`,
-        `- Special characters: ${stats.special}`,
-        `- Whitespace characters: ${stats.whitespace}`,
-        `- Total length: ${stats.totalLength}`,
-        `${stats.includesNameOrSurname ? '- The password includes the user\'s name or surname.' : '' }`,
-        `${stats.hasBirthYear ? '- The password includes the user\'s birth year.' : '' }`
-    ].filter(line => line.trim()).join('\n');
+        '{',
+        `  "Uppercase letters": ${stats.upper},`,
+        `  "Lowercase letters": ${stats.lower},`,
+        `  "Digits": ${stats.digits},`,
+        `  "Special characters": ${stats.special},`,
+        `  "Whitespace characters": ${stats.whitespace},`,
+        `  "Total length": ${stats.totalLength},`,
+        `  "Shannon Entropy (bits)": ${stats.shannonEntropy.toFixed(2)},`,
+        `  "Sequential Patterns Count": ${stats.sequentialPatterns},`,
+        `  "Keyboard Layout Patterns Count": ${stats.keyboardPatterns},`,
+        `  "Includes Name/Surname": ${stats.includesNameOrSurname},`,
+        `  "Includes Birth Year": ${stats.hasBirthYear}`,
+        '}'
+    ].join('\n');
     
-    return `${systemPrompt}\n\n${statistics}`;
+    return `${systemPrompt}\n\nTechnical Profile:\n${statistics}`;
 }
  
 async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
@@ -130,7 +213,7 @@ async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
     // API anahtarı yoksa yerel rapora dön
     if (!GEMINI_API_KEY) {
         const localReport = "API anahtarı bulunamadı. Yerel karakter analizi raporu: Metin uzunluğu: " + stats.totalLength;
-        return { report: this.cleanAndSplit(localReport), source: 'local' };
+        return { report: this.cleanAndSplit(localReport), hybridScore: stats.localEntropyScore, source: 'local' };
     }
 
     // 2. Prompt Oluşturma
@@ -143,6 +226,7 @@ async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
     try {
         // Gemini API expects system instructions and user content separately
         
+        // Ensure no raw passwords by logging or checking stats only.
         const userMessage = this.buildUserMessage(stats);
 
         const body = {
@@ -164,25 +248,42 @@ async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
             const errorText = await res.text();
             //console.error('Gemini API Hata Yanıtı:', res.status, errorText);
             const fallback = `(Hata: Gemini API isteği başarısız oldu. Durum: ${res.status}. Detay: ${errorText.substring(0, 100)}...)`;
-            return { report: this.cleanAndSplit(fallback), source: 'local' };
+            return { report: this.cleanAndSplit(fallback), hybridScore: stats.localEntropyScore, source: 'local' };
         }
 
         const data = await res.json();
         
         // 4. Yanıtı Ayrıştırma
-        const generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        let generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!generated) {
             // Yanıt gövdesi gelse bile içerik boş olabilir (örneğin güvenlik engeli)
             const fallback = `(Gemini'den yanıt alınamadı. Yanıt yapısı: ${JSON.stringify(data, null, 2).substring(0, 300)}...)`;
-            return { report: this.cleanAndSplit(fallback), source: 'local' };
+            return { report: this.cleanAndSplit(fallback), hybridScore: stats.localEntropyScore, source: 'local' };
         }
 
-        return { report: this.cleanAndSplit(generated), source: 'gemini' };
+        let semanticScore = 50;
+        let suggestions: string[] = [];
+        try {
+            generated = generated.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(generated);
+            semanticScore = typeof parsed.semanticScore === 'number' ? parsed.semanticScore : 50;
+            if (Array.isArray(parsed.suggestions)) {
+                suggestions = parsed.suggestions;
+            } else {
+                suggestions = this.cleanAndSplit(generated);
+            }
+        } catch (e) {
+            suggestions = this.cleanAndSplit(generated);
+        }
+
+        const hybridScore = Math.floor((stats.localEntropyScore + semanticScore) / 2);
+
+        return { report: suggestions, hybridScore, source: 'gemini' };
     } catch (err: any) {
         //console.error('Gemini API İstek Hatası:', err);
         const fallback = `(Genel Hata: Gemini API isteği sırasında bir hata oluştu: ${err?.message ?? String(err)})`;
-        return { report: this.cleanAndSplit(fallback), source: 'local' };
+        return { report: this.cleanAndSplit(fallback), hybridScore: stats.localEntropyScore, source: 'local' };
     }
 }
 

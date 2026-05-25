@@ -27,7 +27,7 @@ export const cyberRoutes = new Hono<AppContext>()
 
              return c.json({
                 status: 'success',
-                originalText: inputText,
+                hybridScore: aiReport.hybridScore,
                 processedResult: aiReport.report
             }, 200);
 

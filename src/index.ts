@@ -8,7 +8,7 @@ const app = new Hono<AppContext>()
 
 app.use('*',corsMiddleware)
 
-//app.use('*', validateApiKey)
+app.use('*', validateApiKey)
 
 app.route('/api/cyber', cyberRoutes)
 

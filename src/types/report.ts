@@ -9,10 +9,14 @@ export interface TextStats {
     totalLength: number
     includesNameOrSurname: boolean
     hasBirthYear: boolean
-
+    shannonEntropy: number
+    sequentialPatterns: number
+    keyboardPatterns: number
+    localEntropyScore: number
 }
 
 export interface AiReport {
     report: string[]
+    hybridScore: number
     source: 'gemini' | 'local'
 }
