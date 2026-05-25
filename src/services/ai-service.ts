@@ -99,14 +99,14 @@ private calculateLocalScore(stats: any): number {
 }
 
 private cleanAndSplit(text: string): string[] {
-    // Kaçış karakterlerini temizle, boşlukları normalize et ve cümleleri ayır
+    // Clean escape characters, normalize spaces and split sentences
     return text
-        .replace(/[\n\r\t]/g, ' ') // Kaçış karakterlerini space'e çevir
-        .replace(/\s+/g, ' ') // Birden fazla boşluğu tek boşluğa çevir
-        .trim() // Başında sondaki boşlukları sil
-        .split('.') // Cümleleri ayır
-        .map(s => s.trim()) // Her cümleyi trim et
-        .filter(s => s.length > 0); // Boş cümleleri filtrele
+        .replace(/[\n\r\t]/g, ' ') // Convert escape characters to space
+        .replace(/\s+/g, ' ') // Convert multiple spaces to a single space
+        .trim() // Trim leading and trailing spaces
+        .split('.') // Split into sentences
+        .map(s => s.trim()) // Trim each sentence
+        .filter(s => s.length > 0); // Filter empty sentences
 }
 
 private processText(text: string, personalInfo: any): TextStats {
@@ -174,7 +174,7 @@ private getSystemPrompt(): string {
         'Provide your response exactly in this JSON format:',
         '{',
         '  "semanticScore": <an integer between 0 and 100 evaluating the semantic strength based on the provided stats and patterns>,',
-        '  "suggestions": ["suggestion 1", "suggestion 2", ...] (Provide up to 3 concise, actionable, and polite suggestions in Turkish)',
+        '  "suggestions": ["suggestion 1", "suggestion 2", ...] (Provide up to 3 concise, actionable, and polite suggestions in English)',
         '}',
         'Do NOT wrap the JSON in Markdown block. Output raw JSON only. Warn the user if their personal information is included.'
     ].join('\n');
@@ -202,25 +202,25 @@ private buildUserMessage(stats: TextStats): string {
 }
  
 async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
-    // 1. Anahtar ve Model Ayarları
+    // 1. Key and Model Settings
     const GEMINI_API_KEY= this.c.env.GEN_API_KEY;
-    // Eğer env.GEN_MODEL ayarlanmışsa onu kullan, yoksa 'gemini-2.5-flash' modelini kullan
+    // Use env.GEN_MODEL if set, otherwise use 'gemini-2.5-flash'
     const model = 'gemini-2.5-flash'; 
 
-    // Metni işle
+    // Process the text
     const stats = this.processText(text, personalInfo);
 
-    // API anahtarı yoksa yerel rapora dön
+    // If API key is not found, return a local report
     if (!GEMINI_API_KEY) {
-        const localReport = "API anahtarı bulunamadı. Yerel karakter analizi raporu: Metin uzunluğu: " + stats.totalLength;
+        const localReport = "API key not found. Local character analysis report: Text length: " + stats.totalLength;
         return { report: this.cleanAndSplit(localReport), hybridScore: stats.localEntropyScore, source: 'local' };
     }
 
-    // 2. Prompt Oluşturma
+    // 2. Build Prompt
     
 
-    // 3. API Uç Noktasını Oluşturma
-    // Modeli ve API anahtarını doğrudan URL'ye ekliyoruz
+    // 3. Build API Endpoint
+    // We add the model and API key directly to the URL
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     
     try {
@@ -246,19 +246,19 @@ async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
 
         if (!res.ok) {
             const errorText = await res.text();
-            //console.error('Gemini API Hata Yanıtı:', res.status, errorText);
-            const fallback = `(Hata: Gemini API isteği başarısız oldu. Durum: ${res.status}. Detay: ${errorText.substring(0, 100)}...)`;
+            //console.error('Gemini API Error Response:', res.status, errorText);
+            const fallback = `(Error: Gemini API request failed. Status: ${res.status}. Detail: ${errorText.substring(0, 100)}...)`;
             return { report: this.cleanAndSplit(fallback), hybridScore: stats.localEntropyScore, source: 'local' };
         }
 
         const data = await res.json();
         
-        // 4. Yanıtı Ayrıştırma
+        // 4. Parse Response
         let generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!generated) {
-            // Yanıt gövdesi gelse bile içerik boş olabilir (örneğin güvenlik engeli)
-            const fallback = `(Gemini'den yanıt alınamadı. Yanıt yapısı: ${JSON.stringify(data, null, 2).substring(0, 300)}...)`;
+            // Even if the response body is received, the content might be empty (e.g. security block)
+            const fallback = `(No response received from Gemini. Response structure: ${JSON.stringify(data, null, 2).substring(0, 300)}...)`;
             return { report: this.cleanAndSplit(fallback), hybridScore: stats.localEntropyScore, source: 'local' };
         }
 
@@ -281,8 +281,8 @@ async callGenAi(text: string, personalInfo: any): Promise<AiReport> {
 
         return { report: suggestions, hybridScore, source: 'gemini' };
     } catch (err: any) {
-        //console.error('Gemini API İstek Hatası:', err);
-        const fallback = `(Genel Hata: Gemini API isteği sırasında bir hata oluştu: ${err?.message ?? String(err)})`;
+        //console.error('Gemini API Request Error:', err);
+        const fallback = `(General Error: An error occurred during the Gemini API request: ${err?.message ?? String(err)})`;
         return { report: this.cleanAndSplit(fallback), hybridScore: stats.localEntropyScore, source: 'local' };
     }
 }
