@@ -5,7 +5,7 @@ This project provides a robust, privacy-first API for password security analysis
 ## Core Features
 *   **Privacy-by-Design:** The most important feature. Raw passwords are *never* transmitted to external AI servers.
 *   **Dual-layer Hybrid Score:** Analyzed by local algorithms for mathematical strength and by Gemini API for human-predictability or dictionary patterns.
-*   **Actionable Feedback:** Returns 0-100 numerical score and targeted security tips in Turkish.
+*   **Actionable Feedback:** Returns 0-100 numerical score and targeted security tips. Includes multi-language support (`en`, `tr`, `fr`), defaulting to English if omitted.
 *   **Edge Performance:** Runs completely on the edge using Cloudflare Workers (Hono framework).
 
 ## System Architecture & Flow
@@ -28,28 +28,28 @@ To ensure data consistency and safety during runtime, this project uses the [Zod
 
 ### 1. Installation
 
-`ash
+```bash
 git clone <repository-url>
 cd <project-folder>
 bun install
-`
+```
 
 ### 2. Environment Variables
 
 Create .dev.vars and .env files in your root directory based on the .env.example.
 
-`env
+```env
 GEN_API_KEY="your-gemini-api-key-here"
 X_API_KEY="your-secure-internal-api-key"
-`
+```
 
 ### 3. Local Development
 
 Run the Cloudflare dev server locally:
 
-`ash
+```bash
 bun run dev
-`
+```
 
 The API will typically start at http://localhost:8787/.
 
@@ -69,16 +69,17 @@ This endpoint accepts the password data and user information.
 
 **Request Body Example:**
 
-`json
+```json
 {
   "password": "Password123!",
   "personalInfo": {
     "name": "Jane",
     "surname": "Doe",
     "birthDate": "1990-12-05"
-  }
+  },
+  "language": "en"
 }
-`
+```
 
 **Response Example:**
 
@@ -99,9 +100,9 @@ This endpoint accepts the password data and user information.
 
 Integrating this API into your Front-end (React, Vue, Vanilla JS, etc.) is straightforward.
 
-### Example: React etch Call
+### Example: React Fetch Call
 
-`javascript
+```javascript
 import React, { useState } from 'react';
 
 const PasswordChecker = () => {
@@ -161,7 +162,7 @@ const PasswordChecker = () => {
 };
 
 export default PasswordChecker;
-`
+```
 
 ---
 
